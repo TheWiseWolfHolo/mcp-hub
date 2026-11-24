@@ -270,8 +270,18 @@ func TestACL_WritePrivateFileAtomicAndAuditRoundTrip(t *testing.T) {
 	if err := os.WriteFile(inheritedChild, []byte("ok"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// On elevated Windows accounts (e.g. GitHub Actions Administrators), os.WriteFile inherits
+	// the private OICI DACL while Windows assigns TokenOwner (BUILTIN\Administrators) as file owner.
+	if aces, err := listAllowAceSIDsForTest(inheritedChild); err != nil {
+		t.Fatalf("listAllowAceSIDsForTest(inheritedChild): %v", err)
+	} else if len(aces) != 1 || aces[0] != curSID {
+		t.Fatalf("inherited child allow ACE SIDs = %v, want [%s]", aces, curSID)
+	}
+	if err := ResetFileACL(inheritedChild, false); err != nil {
+		t.Fatalf("ResetFileACL(inheritedChild): %v", err)
+	}
 	if got := AuditFileACL(inheritedChild); !got.Secure {
-		t.Fatalf("child created inside OICI private dir failed audit: %v", got.Issues)
+		t.Fatalf("child inside OICI private dir failed audit after ResetFileACL: %v", got.Issues)
 	}
 
 	// Verify currentProcessMemoryStats returns live memory usage.

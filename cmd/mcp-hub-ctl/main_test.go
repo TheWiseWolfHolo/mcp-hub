@@ -1743,3 +1743,69 @@ func TestExpandedSnippetPresets(t *testing.T) {
 		}
 	}
 }
+
+func TestAuditAllowsMultilineJSONTokensPolicyFileWhileCheckingACL(t *testing.T) {
+	dataDir := filepath.Join(t.TempDir(), "policy-audit")
+	code, out, stderr := runCLI(t, "init", "--dir", dataDir, "--json")
+	if code != exitOK {
+		t.Fatalf("init failed: %d out=%s err=%s", code, out, stderr)
+	}
+	m := decodeJSON(t, out)
+	cfgPath := fmt.Sprint(m["configPath"])
+
+	policyPath := filepath.Join(dataDir, "secrets", "tokens.json")
+	policyJSON := "{\n  \"tokens\": [\n    {\"name\": \"agent\", \"allow\": [\"search\"]}\n  ]\n}\n"
+	if err := hub.WritePrivateFileAtomic(policyPath, []byte(policyJSON)); err != nil {
+		t.Fatalf("write private policy file: %v", err)
+	}
+
+	cfg, err := hub.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Services = []hub.ServiceConfig{{
+		Name:    "app",
+		Command: "node",
+		Port:    19123,
+		Env:     map[string]string{"APP_TOKENS_FILE": filepath.ToSlash(policyPath)},
+	}}
+	raw, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hub.WritePrivateFileAtomic(cfgPath, raw); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	code, out, stderr = runCLI(t, "--config", cfgPath, "audit", "--json")
+	if code != exitOK {
+		t.Fatalf("audit should pass with 0 violations on valid multi-line JSON tokens policy file: code=%d out=%s err=%s", code, out, stderr)
+	}
+	res := decodeJSON(t, out)
+	if res["ok"] != true || res["violations"].(float64) != 0 {
+		t.Fatalf("unexpected audit result: %s", out)
+	}
+	findings := res["findings"].([]any)
+	foundACL := false
+	for _, item := range findings {
+		fm := item.(map[string]any)
+		if fm["check"] == "acl" && strings.Contains(fmt.Sprint(fm["target"]), "APP_TOKENS_FILE") && fm["status"] == "ok" {
+			foundACL = true
+		}
+		if fm["check"] == "secret-read" {
+			t.Fatalf("unexpected secret-read finding on JSON policy file: %v", fm)
+		}
+	}
+	if !foundACL {
+		t.Fatalf("expected ACL check finding for APP_TOKENS_FILE:\n%s", out)
+	}
+
+	// Removing the policy file must still trigger an ACL violation.
+	if err := os.Remove(policyPath); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ = runCLI(t, "--config", cfgPath, "audit", "--json")
+	if code != exitAudit || !strings.Contains(out, "APP_TOKENS_FILE") {
+		t.Fatalf("missing policy file must still fail ACL audit: code=%d out=%s", code, out)
+	}
+}

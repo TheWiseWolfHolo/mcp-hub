@@ -39,6 +39,7 @@ var (
 	procConvertStringSecurityDescriptorToSDW = advapi32.NewProc("ConvertStringSecurityDescriptorToSecurityDescriptorW")
 	procGetSecurityDescriptorDacl            = advapi32.NewProc("GetSecurityDescriptorDacl")
 	procSetKernelObjectSecurity              = advapi32.NewProc("SetKernelObjectSecurity")
+	procGetSecurityInfo                      = advapi32.NewProc("GetSecurityInfo")
 	procSetNamedSecurityInfoW                = advapi32.NewProc("SetNamedSecurityInfoW")
 	procGetNamedSecurityInfoW                = advapi32.NewProc("GetNamedSecurityInfoW")
 	procGetAclInformation                    = advapi32.NewProc("GetAclInformation")
@@ -684,16 +685,46 @@ func currentProcessMemoryStats() (workingSetBytes, privateBytes uint64) {
 	return uint64(pmc.WorkingSetSize), uint64(pmc.PrivateUsage)
 }
 
-// ResetFileACL replaces the DACL on one file or directory without following its final reparse point.
+func handleOwnerSID(h syscall.Handle) (string, error) {
+	var pOwner *syscall.SID
+	var pSD uintptr
+	ret, _, _ := procGetSecurityInfo.Call(
+		uintptr(h),
+		seFileObject,
+		ownerSecurityInformation,
+		uintptr(unsafe.Pointer(&pOwner)),
+		0,
+		0,
+		0,
+		uintptr(unsafe.Pointer(&pSD)),
+	)
+	if ret != 0 {
+		return "", syscall.Errno(ret)
+	}
+	if pSD != 0 {
+		defer syscall.LocalFree(syscall.Handle(pSD))
+	}
+	if pOwner == nil {
+		return "", errors.New("empty owner SID")
+	}
+	valid, _, _ := procIsValidSid.Call(uintptr(unsafe.Pointer(pOwner)))
+	if valid == 0 {
+		return "", errors.New("invalid owner SID")
+	}
+	return pOwner.String()
+}
+
+// ResetFileACL sets the current-user owner (when different) and replaces the DACL on one file or
+// directory without following its final reparse point.
 // Files receive a protected current-user-only ACE; directories receive the same ACE with OICI inheritance.
 func ResetFileACL(path string, isDir bool) error {
 	sid, err := currentUserSIDString()
 	if err != nil {
 		return err
 	}
-	sddl := "D:P(A;;FA;;;" + sid + ")"
+	sddl := "O:" + sid + "D:P(A;;FA;;;" + sid + ")"
 	if isDir {
-		sddl = "D:P(A;OICI;FA;;;" + sid + ")"
+		sddl = "O:" + sid + "D:P(A;OICI;FA;;;" + sid + ")"
 	}
 	sd, err := securityDescriptor(sddl)
 	if err != nil {
@@ -706,14 +737,25 @@ func ResetFileACL(path string, isDir bool) error {
 		return err
 	}
 	const (
+		readControl    = 0x00020000
 		writeDACL      = 0x00040000
+		writeOwner     = 0x00080000
 		readAttributes = 0x00000080
 	)
-	h, err := syscall.CreateFile(name, writeDACL|readAttributes,
-		syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE, nil,
-		syscall.OPEN_EXISTING, syscall.FILE_FLAG_OPEN_REPARSE_POINT|syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	openFlags := uint32(syscall.FILE_FLAG_OPEN_REPARSE_POINT | syscall.FILE_FLAG_BACKUP_SEMANTICS)
+	shareMode := uint32(syscall.FILE_SHARE_READ | syscall.FILE_SHARE_WRITE)
+	hasWriteOwner := true
+	h, err := syscall.CreateFile(name, readControl|writeDACL|writeOwner|readAttributes,
+		shareMode, nil, syscall.OPEN_EXISTING, openFlags, 0)
 	if err != nil {
-		return fmt.Errorf("open ACL target %q: %w", path, err)
+		if errors.Is(err, errorAccessDenied) {
+			hasWriteOwner = false
+			h, err = syscall.CreateFile(name, readControl|writeDACL|readAttributes,
+				shareMode, nil, syscall.OPEN_EXISTING, openFlags, 0)
+		}
+		if err != nil {
+			return fmt.Errorf("open ACL target %q: %w", path, err)
+		}
 	}
 	defer syscall.CloseHandle(h)
 	var info syscall.ByHandleFileInformation
@@ -724,9 +766,18 @@ func ResetFileACL(path string, isDir bool) error {
 		(info.FileAttributes&syscall.FILE_ATTRIBUTE_DIRECTORY != 0) != isDir {
 		return fmt.Errorf("unexpected ACL target type: %q", path)
 	}
-	ok, _, errno := procSetKernelObjectSecurity.Call(uintptr(h), protectedDaclSecurityInfo|daclSecurityInformation, sd)
+
+	secInfo := uintptr(protectedDaclSecurityInfo | daclSecurityInformation)
+	ownerSID, ownerErr := handleOwnerSID(h)
+	if ownerErr != nil || ownerSID != sid {
+		if !hasWriteOwner {
+			return fmt.Errorf("set owner SID for %q: %w", path, errorAccessDenied)
+		}
+		secInfo |= ownerSecurityInformation
+	}
+	ok, _, errno := procSetKernelObjectSecurity.Call(uintptr(h), secInfo, sd)
 	if ok == 0 {
-		return fmt.Errorf("set protected DACL for %q: %w", path, errno)
+		return fmt.Errorf("set protected ACL for %q: %w", path, errno)
 	}
 	return nil
 }

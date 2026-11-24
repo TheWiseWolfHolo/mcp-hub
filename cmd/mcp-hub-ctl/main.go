@@ -3820,10 +3820,11 @@ type auditFinding struct {
 }
 
 type secretRef struct {
-	label  string
-	path   string
-	owner  string
-	bearer bool // hub-issued client Bearer token (weak-secret check applies)
+	label      string
+	path       string
+	owner      string
+	bearer     bool // hub-issued client Bearer token (weak-secret check applies)
+	policyFile bool // multi-token/structured policy file (ACL audited, skip single-line ReadSecretFile)
 }
 
 type aclTarget struct {
@@ -3833,28 +3834,45 @@ type aclTarget struct {
 	optional bool // missing is a warning, not a violation
 }
 
+func isStructuredPolicyFile(path string) bool {
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(path)), ".json")
+}
+
 func collectSecretRefs(cfg *hub.Config) []secretRef {
 	var refs []secretRef
-	add := func(label, path, owner string, bearer bool) {
-		if strings.TrimSpace(path) != "" {
-			refs = append(refs, secretRef{label: label, path: strings.TrimSpace(path), owner: owner, bearer: bearer})
+	add := func(label, path, owner string, bearer, policyFile bool) {
+		trimmed := strings.TrimSpace(path)
+		if trimmed == "" {
+			return
 		}
+		if !bearer && isStructuredPolicyFile(trimmed) {
+			policyFile = true
+		}
+		refs = append(refs, secretRef{
+			label:      label,
+			path:       trimmed,
+			owner:      owner,
+			bearer:     bearer,
+			policyFile: policyFile,
+		})
 	}
-	add("controlTokenFile", cfg.ControlTokenFile, "control", true)
+	add("controlTokenFile", cfg.ControlTokenFile, "control", true, false)
 	for _, s := range cfg.Services {
 		for _, k := range sortedKeys(s.EnvFiles) {
-			add(fmt.Sprintf("service %s envFiles[%s]", s.Name, k), s.EnvFiles[k], s.Name, false)
+			add(fmt.Sprintf("service %s envFiles[%s]", s.Name, k), s.EnvFiles[k], s.Name, false, false)
 		}
-		add(fmt.Sprintf("service %s shutdownTokenFile", s.Name), s.ShutdownTokenFile, s.Name, false)
-		add(fmt.Sprintf("service %s reloadTokenFile", s.Name), s.ReloadTokenFile, s.Name, false)
+		add(fmt.Sprintf("service %s shutdownTokenFile", s.Name), s.ShutdownTokenFile, s.Name, false, false)
+		add(fmt.Sprintf("service %s reloadTokenFile", s.Name), s.ReloadTokenFile, s.Name, false, false)
 		for _, k := range sortedKeys(s.Env) {
 			ku := strings.ToUpper(k)
 			if strings.HasSuffix(ku, "_FILES") {
+				isMulti := strings.HasSuffix(ku, "_TOKENS_FILES")
 				for _, p := range strings.FieldsFunc(s.Env[k], func(r rune) bool { return r == ';' || r == ',' || r == '\n' }) {
-					add(fmt.Sprintf("service %s env[%s]", s.Name, k), p, s.Name, false)
+					add(fmt.Sprintf("service %s env[%s]", s.Name, k), p, s.Name, false, isMulti)
 				}
 			} else if strings.HasSuffix(ku, "_FILE") {
-				add(fmt.Sprintf("service %s env[%s]", s.Name, k), s.Env[k], s.Name, false)
+				isMulti := strings.HasSuffix(ku, "_TOKENS_FILE")
+				add(fmt.Sprintf("service %s env[%s]", s.Name, k), s.Env[k], s.Name, false, isMulti)
 			}
 		}
 	}
@@ -3863,11 +3881,11 @@ func collectSecretRefs(cfg *hub.Config) []secretRef {
 		if owner == "" {
 			owner = "proxy:" + p.Name
 		}
-		add(fmt.Sprintf("proxy %s tokenFile", p.Name), p.TokenFile, owner, true)
+		add(fmt.Sprintf("proxy %s tokenFile", p.Name), p.TokenFile, owner, true, false)
 		for i, t := range p.Tokens {
-			add(fmt.Sprintf("proxy %s tokens[%d]", p.Name, i), t.TokenFile, owner, true)
+			add(fmt.Sprintf("proxy %s tokens[%d]", p.Name, i), t.TokenFile, owner, true, false)
 		}
-		add(fmt.Sprintf("proxy %s upstreamTokenFile", p.Name), p.UpstreamTokenFile, owner, false)
+		add(fmt.Sprintf("proxy %s upstreamTokenFile", p.Name), p.UpstreamTokenFile, owner, false, false)
 	}
 	if cfg.Gateway != nil {
 		for _, r := range cfg.Gateway.Routes {
@@ -3875,11 +3893,11 @@ func collectSecretRefs(cfg *hub.Config) []secretRef {
 			if owner == "" {
 				owner = "route:" + r.Slug
 			}
-			add(fmt.Sprintf("gateway %s tokenFile", r.Slug), r.TokenFile, owner, true)
+			add(fmt.Sprintf("gateway %s tokenFile", r.Slug), r.TokenFile, owner, true, false)
 			for i, t := range r.Tokens {
-				add(fmt.Sprintf("gateway %s tokens[%d]", r.Slug, i), t.TokenFile, owner, true)
+				add(fmt.Sprintf("gateway %s tokens[%d]", r.Slug, i), t.TokenFile, owner, true, false)
 			}
-			add(fmt.Sprintf("gateway %s upstreamTokenFile", r.Slug), r.UpstreamTokenFile, owner, false)
+			add(fmt.Sprintf("gateway %s upstreamTokenFile", r.Slug), r.UpstreamTokenFile, owner, false, false)
 		}
 	}
 	return refs
@@ -4026,6 +4044,9 @@ func (a *app) cmdAudit(rest []string) error {
 	byHash := map[string]*tokInfo{}
 	checkedWeakPath := map[string]bool{}
 	for _, r := range refs {
+		if r.policyFile {
+			continue
+		}
 		val, err := hub.ReadSecretFile(r.path)
 		if err != nil {
 			if r.bearer || !errors.Is(err, os.ErrNotExist) {
