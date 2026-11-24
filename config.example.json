@@ -1,0 +1,151 @@
+{
+  "controlAddr": "127.0.0.1:18470",
+  "controlTokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/control.token",
+  "logDir": "C:/Users/you/AppData/Local/McpHub/logs",
+  "logMaxBytes": 5242880,
+  "tray": true,
+  "gateway": {
+    "listenAddr": "127.0.0.1:18471",
+    "routes": [
+      {
+        "slug": "filesystem",
+        "service": "filesystem-mcp",
+        "description": "STDIO filesystem server exposed at http://127.0.0.1:18471/s/filesystem",
+        "tokens": [
+          {
+            "name": "agents-readonly",
+            "tokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/filesystem-readonly.token",
+            "allowTools": ["read_*", "list_*", "search_*", "directory_tree", "get_file_info"],
+            "readOnlyOnly": true
+          },
+          {
+            "name": "owner",
+            "tokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/filesystem-owner.token"
+          }
+        ]
+      },
+      {
+        "slug": "memory",
+        "service": "memory-mcp",
+        "description": "STDIO knowledge-graph memory server exposed at http://127.0.0.1:18471/s/memory",
+        "tokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/memory-gateway.token"
+      },
+      {
+        "slug": "docs",
+        "service": "docs-mcp",
+        "description": "Local HTTP docs server exposed at http://127.0.0.1:18471/s/docs",
+        "tokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/docs-gateway.token",
+        "upstreamTokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/docs-upstream.token",
+        "healthPath": "/healthz"
+      }
+    ]
+  },
+  "services": [
+    {
+      "name": "playwright-mcp",
+      "description": "Playwright browser automation (eager, always on)",
+      "tags": ["browser"],
+      "command": "npx.cmd",
+      "args": [
+        "-y",
+        "@playwright/mcp",
+        "--port", "18486",
+        "--host", "127.0.0.1",
+        "--allowed-hosts", "127.0.0.1:18486,localhost:18486",
+        "--headless",
+        "--isolated"
+      ],
+      "healthUrl": "tcp://127.0.0.1:18486",
+      "healthIntervalSec": 10,
+      "stripProxyEnv": true,
+      "maxConsecutiveFailures": 5
+    },
+    {
+      "name": "docs-mcp",
+      "description": "Local Streamable HTTP MCP server with graceful shutdown and hot reload",
+      "tags": ["docs"],
+      "command": "node.exe",
+      "args": ["C:/Users/you/mcp-servers/docs-mcp/dist/index.js"],
+      "env": {
+        "MCP_TRANSPORT": "http",
+        "DOCS_MCP_HOST": "127.0.0.1",
+        "DOCS_MCP_PORT": "18474"
+      },
+      "envFiles": {
+        "DOCS_MCP_TOKEN": "C:/Users/you/AppData/Local/McpHub/secrets/docs-upstream.token"
+      },
+      "startMode": "lazy",
+      "idleSleepSec": 900,
+      "abandonedSessionSleepSec": 300,
+      "startTimeoutSec": 20,
+      "healthUrl": "http://127.0.0.1:18474/healthz",
+      "healthIntervalSec": 10,
+      "reloadUrl": "http://127.0.0.1:18474/admin/reload",
+      "reloadTokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/docs-upstream.token",
+      "shutdownUrl": "http://127.0.0.1:18474/admin/shutdown",
+      "shutdownTokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/docs-upstream.token"
+    },
+    {
+      "name": "filesystem-mcp",
+      "mode": "stdio-bridge",
+      "description": "Official filesystem STDIO MCP server bridged to Streamable HTTP",
+      "tags": ["files"],
+      "command": "npx.cmd",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:/Users/you/Projects"
+      ],
+      "startMode": "lazy",
+      "idleSleepSec": 600,
+      "requestTimeoutSec": 120,
+      "initTimeoutSec": 20,
+      "maxConcurrent": 16
+    },
+    {
+      "name": "memory-mcp",
+      "mode": "stdio-bridge",
+      "description": "Official memory STDIO MCP server bridged to Streamable HTTP",
+      "tags": ["memory"],
+      "command": "npx.cmd",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "startMode": "lazy",
+      "idleSleepSec": 600,
+      "requestTimeoutSec": 120,
+      "initTimeoutSec": 20,
+      "maxConcurrent": 16
+    }
+  ],
+  "proxies": [
+    {
+      "name": "playwright-auth-proxy",
+      "listenAddr": "127.0.0.1:18476",
+      "targetUrl": "http://127.0.0.1:18486",
+      "upstreamService": "playwright-mcp",
+      "tokens": [
+        {
+          "name": "coding-agent",
+          "tokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/playwright-agent.token",
+          "denyTools": ["browser_install"]
+        },
+        {
+          "name": "readonly",
+          "tokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/playwright-readonly.token",
+          "readOnlyOnly": true
+        }
+      ]
+    },
+    {
+      "name": "docs-auth-proxy",
+      "listenAddr": "127.0.0.1:18477",
+      "targetUrl": "http://127.0.0.1:18474",
+      "upstreamService": "docs-mcp",
+      "tokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/docs-proxy.token",
+      "upstreamTokenFile": "C:/Users/you/AppData/Local/McpHub/secrets/docs-upstream.token",
+      "healthPath": "/healthz"
+    }
+  ]
+}

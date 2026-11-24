@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="mcphub-csrf" content="{{.CSRFToken}}">
+  <meta name="mcphub-auth" content="{{.AuthMode}}">
+  <title>McpHub</title>
+  <link rel="icon" type="image/svg+xml" href="/ui/assets/favicon.svg">
+  <link rel="stylesheet" href="/ui/assets/app.css">
+  <script defer src="/ui/assets/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a class="brand" href="/ui/" aria-label="McpHub Home">
+        <svg class="brand-logo" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="8.4" x2="12" y2="6"/>
+            <line x1="15.1" y1="13.8" x2="17.2" y2="15"/>
+            <line x1="8.9" y1="13.8" x2="6.8" y2="15"/>
+            <circle cx="12" cy="12" r="3.4"/>
+          </g>
+          <circle cx="12" cy="12" r="1.35" class="brand-core"/>
+          <circle cx="12" cy="4.4" r="1.9" fill="currentColor"/>
+          <circle cx="18.6" cy="15.8" r="1.9" fill="currentColor"/>
+          <circle cx="5.4" cy="15.8" r="1.9" fill="currentColor"/>
+        </svg>
+        <span class="brand-name">McpHub</span>
+        <span class="version-pill mono" id="hub-version">v—</span>
+      </a>
+
+      <nav class="nav-tabs" role="tablist" aria-label="Dashboard sections">
+        <button type="button" class="nav-tab is-active" role="tab" aria-selected="true" data-view="overview">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="3" width="7" height="7" rx="1.5"/>
+            <rect x="3" y="14" width="7" height="7" rx="1.5"/>
+            <rect x="14" y="14" width="7" height="7" rx="1.5"/>
+          </svg>
+          <span>Overview</span>
+        </button>
+        <button type="button" class="nav-tab" role="tab" aria-selected="false" data-view="logs">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="4 17 10 11 4 5"/>
+            <line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <span>Live Logs</span>
+        </button>
+        <button type="button" class="nav-tab" role="tab" aria-selected="false" data-view="tools">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>
+          <span>Tools &amp; Analytics</span>
+        </button>
+      </nav>
+    </div>
+
+    <div class="topbar-right">
+      <div class="sse-pill" id="sse-status" title="Live event stream">
+        <span class="status-dot dot-muted" id="sse-dot"></span>
+        <span id="sse-label">Connecting</span>
+      </div>
+
+      <button type="button" class="btn btn-secondary" id="btn-reload-hub" title="Reload hub configuration">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+          <path d="M3 3v5h5"/>
+          <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+          <path d="M16 16h5v5"/>
+        </svg>
+        <span>Reload Config</span>
+      </button>
+
+      <button type="button" class="btn btn-secondary" id="btn-restart-all" title="Restart all managed services">
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12a9 9 0 1 0 3-6.7L3 8"/>
+          <path d="M3 3v5h5"/>
+        </svg>
+        <span>Restart All</span>
+      </button>
+
+      <button type="button" class="icon-btn" id="btn-theme" title="Toggle theme" aria-label="Toggle color theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"/>
+          <path d="M12 2v2"/>
+          <path d="M12 20v2"/>
+          <path d="m4.93 4.93 1.41 1.41"/>
+          <path d="m17.66 17.66 1.41 1.41"/>
+          <path d="M2 12h2"/>
+          <path d="M20 12h2"/>
+          <path d="m6.34 17.66-1.41 1.41"/>
+          <path d="m19.07 4.93-1.41 1.41"/>
+        </svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>
+        </svg>
+      </button>
+
+      <button type="button" class="icon-btn" id="btn-logout" title="Lock dashboard" aria-label="Lock dashboard" hidden>
+        <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+          <polyline points="16 17 21 12 16 7"/>
+          <line x1="21" y1="12" x2="9" y2="12"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <!-- VIEW 1: OVERVIEW & SERVICES -->
+    <section class="view" id="view-overview" role="tabpanel">
+      <div class="metric-strip" aria-label="Hub summary">
+        <div class="metric-cell">
+          <div class="metric-label">Healthy Services</div>
+          <div class="metric-row">
+            <span class="metric-value mono" id="metric-healthy">—</span>
+            <span class="metric-chip chip-error" id="metric-issues-chip" hidden></span>
+          </div>
+        </div>
+        <div class="metric-cell">
+          <div class="metric-label">Sleeping</div>
+          <div class="metric-row">
+            <span class="metric-value mono" id="metric-sleeping">—</span>
+            <span class="metric-sub mono" id="metric-stopped-sub"></span>
+          </div>
+        </div>
+        <div class="metric-cell">
+          <div class="metric-label">Total Tree RAM</div>
+          <div class="metric-row">
+            <span class="metric-value mono" id="metric-ram">—</span>
+            <span class="metric-sub mono" id="metric-ws-sub"></span>
+          </div>
+        </div>
+        <div class="metric-cell">
+          <div class="metric-label">Hub Uptime</div>
+          <div class="metric-row">
+            <span class="metric-value mono" id="metric-uptime">—</span>
+            <span class="metric-sub mono" id="metric-pid-sub"></span>
+          </div>
+        </div>
+        <div class="metric-cell">
+          <div class="metric-label">Requests &amp; SSE</div>
+          <div class="metric-row">
+            <span class="metric-value mono" id="metric-requests">—</span>
+            <span class="metric-sub mono" id="metric-sse-sub"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="overview-split" id="overview-split">
+        <div class="overview-primary">
+          <div class="panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Services</h2>
+                <span class="count-pill mono" id="services-count">0</span>
+                <div class="filter-pills" id="service-filters" role="group" aria-label="Filter services">
+                  <button type="button" class="filter-pill is-active" data-filter="all">All</button>
+                  <button type="button" class="filter-pill" data-filter="running">Running</button>
+                  <button type="button" class="filter-pill" data-filter="sleeping">Sleeping</button>
+                  <button type="button" class="filter-pill" data-filter="issues">Issues</button>
+                </div>
+              </div>
+              <div class="panel-controls">
+                <input type="search" class="search-input" id="service-search" placeholder="Filter services…" aria-label="Filter services">
+                <button type="button" class="btn btn-ghost btn-sm" id="btn-start-all">Start All</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table services-table">
+                <thead>
+                  <tr>
+                    <th>Service</th>
+                    <th>State</th>
+                    <th>PID / Port</th>
+                    <th class="num">RAM</th>
+                    <th>Traffic</th>
+                    <th>Restarts</th>
+                    <th class="actions-col">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="services-tbody"></tbody>
+              </table>
+              <div class="empty-state" id="services-empty" hidden>No matching services.</div>
+            </div>
+          </div>
+
+          <div class="panel secondary-panel" id="routes-panel">
+            <div class="panel-header">
+              <div class="panel-title-group">
+                <h2 class="panel-title">Proxies &amp; Gateway Routes</h2>
+                <span class="mono muted-addr" id="gateway-listen-addr"></span>
+              </div>
+              <div class="panel-controls">
+                <span class="count-pill mono" id="routes-count">0</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table routes-table">
+                <thead>
+                  <tr>
+                    <th>Route / Proxy</th>
+                    <th>Mode</th>
+                    <th>Target / Service</th>
+                    <th>State</th>
+                    <th class="num">Sessions</th>
+                    <th class="num">Traffic</th>
+                  </tr>
+                </thead>
+                <tbody id="routes-tbody"></tbody>
+              </table>
+              <div class="empty-state" id="routes-empty" hidden>No gateway routes or proxies configured.</div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="detail-drawer" id="detail-drawer" aria-label="Service details" hidden>
+          <div class="drawer-header">
+            <div class="drawer-title-row">
+              <span class="status-dot" id="drawer-dot"></span>
+              <h3 class="drawer-title" id="drawer-name"></h3>
+              <span class="badge mono" id="drawer-mode"></span>
+              <span class="badge mono" id="drawer-start-mode"></span>
+            </div>
+            <button type="button" class="icon-btn icon-btn-sm" id="btn-close-drawer" aria-label="Close detail drawer">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <div class="drawer-actions" id="drawer-actions"></div>
+
+          <div class="drawer-section" id="drawer-error-section" hidden>
+            <div class="error-box">
+              <div class="error-box-title">Error</div>
+              <div class="error-box-msg mono" id="drawer-last-error"></div>
+            </div>
+            <div class="crash-tail-wrap" id="drawer-crash-wrap" hidden>
+              <div class="section-label">Crash Tail</div>
+              <pre class="code-block crash-block mono" id="drawer-crash-tail"></pre>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <div class="section-label">Endpoint</div>
+            <div class="copy-field">
+              <code class="mono copy-value" id="drawer-endpoint">—</code>
+              <button type="button" class="icon-btn icon-btn-sm" id="btn-copy-endpoint" title="Copy endpoint URL" aria-label="Copy endpoint URL">
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="9" y="9" width="13" height="13" rx="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+              </button>
+            </div>
+            <div class="auth-meta">
+              <span class="section-label-inline">Auth</span>
+              <span class="mono auth-path" id="drawer-auth">—</span>
+            </div>
+          </div>
+
+          <div class="drawer-section">
+            <div class="section-label">Metrics</div>
+            <div class="kv-grid" id="drawer-metrics-grid"></div>
+          </div>
+
+          <div class="drawer-section">
+            <div class="snippet-header">
+              <div class="section-label">Client Config</div>
+              <button type="button" class="btn btn-ghost btn-xs" id="btn-copy-snippet">Copy</button>
+            </div>
+            <div class="snippet-tabs" id="snippet-tabs" role="tablist" aria-label="Client format">
+              <button type="button" class="snippet-tab is-active" data-client="claude">claude</button>
+              <button type="button" class="snippet-tab" data-client="codex">codex</button>
+              <button type="button" class="snippet-tab" data-client="cursor">cursor</button>
+              <button type="button" class="snippet-tab" data-client="vscode">vscode</button>
+              <button type="button" class="snippet-tab" data-client="agy">agy</button>
+              <button type="button" class="snippet-tab" data-client="opencode">opencode</button>
+              <button type="button" class="snippet-tab" data-client="devin">devin</button>
+            </div>
+            <pre class="code-block snippet-block mono" id="drawer-snippet">Loading…</pre>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- VIEW 2: LIVE LOGS -->
+    <section class="view" id="view-logs" role="tabpanel" hidden>
+      <div class="panel logs-panel">
+        <div class="panel-header logs-toolbar">
+          <div class="panel-title-group">
+            <select class="select-input mono" id="log-target-select" aria-label="Log source">
+              <option value="hub">hub</option>
+            </select>
+            <span class="sse-pill sse-pill-sm" id="log-stream-pill">
+              <span class="status-dot dot-muted" id="log-stream-dot"></span>
+              <span id="log-stream-label">Idle</span>
+            </span>
+            <span class="count-pill mono" id="log-line-count">0 lines</span>
+          </div>
+          <div class="panel-controls">
+            <input type="search" class="search-input" id="log-filter-input" placeholder="Filter logs…" aria-label="Filter log lines">
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-log-pause">Pause</button>
+            <button type="button" class="btn btn-secondary btn-sm is-toggled" id="btn-log-autoscroll" aria-pressed="true">Auto-scroll</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-log-copy">Copy</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-log-clear">Clear</button>
+          </div>
+        </div>
+        <div class="log-viewport mono" id="log-viewport" role="log" aria-live="off"></div>
+      </div>
+    </section>
+
+    <!-- VIEW 3: TOOL ANALYTICS & LIVE MCP EXPLORER -->
+    <section class="view" id="view-tools" role="tabpanel" hidden>
+      <div class="tools-split">
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">Tool Analytics</h2>
+              <span class="count-pill mono" id="analytics-count">0 tools</span>
+            </div>
+            <div class="panel-controls">
+              <input type="search" class="search-input" id="analytics-search" placeholder="Filter tools…" aria-label="Filter tool metrics">
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="data-table analytics-table">
+              <thead>
+                <tr>
+                  <th><button type="button" class="sort-btn" data-sort="service">Service <span class="sort-ind"></span></button></th>
+                  <th><button type="button" class="sort-btn" data-sort="tool">Tool Name <span class="sort-ind"></span></button></th>
+                  <th class="num"><button type="button" class="sort-btn sort-num is-sorted-desc" data-sort="calls">Calls <span class="sort-ind"></span></button></th>
+                  <th class="num"><button type="button" class="sort-btn sort-num" data-sort="errors">Errors <span class="sort-ind"></span></button></th>
+                  <th class="num"><button type="button" class="sort-btn sort-num" data-sort="avgMs">Avg ms <span class="sort-ind"></span></button></th>
+                  <th class="num"><button type="button" class="sort-btn sort-num" data-sort="lastCalledAt">Last Called <span class="sort-ind"></span></button></th>
+                </tr>
+              </thead>
+              <tbody id="analytics-tbody"></tbody>
+            </table>
+            <div class="empty-state" id="analytics-empty" hidden>No tool calls recorded yet.</div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header explorer-header">
+            <div class="panel-title-group">
+              <h2 class="panel-title">Live MCP Explorer</h2>
+              <span class="count-pill mono" id="explorer-count" hidden></span>
+            </div>
+            <div class="explorer-controls">
+              <select class="select-input mono" id="explorer-service-select" aria-label="Target service"></select>
+              <label class="checkbox-label">
+                <input type="checkbox" id="explorer-wake-checkbox">
+                <span>Wake if sleeping</span>
+              </label>
+              <button type="button" class="btn btn-primary btn-sm" id="btn-inspect-tools">Inspect Tools</button>
+            </div>
+          </div>
+
+          <div class="explorer-meta-bar" id="explorer-meta" hidden>
+            <span class="mono explorer-endpoint" id="explorer-endpoint"></span>
+            <div class="explorer-meta-right">
+              <span class="badge mono" id="explorer-latency"></span>
+              <input type="search" class="search-input search-input-sm" id="explorer-filter" placeholder="Filter schemas…" aria-label="Filter discovered tools">
+            </div>
+          </div>
+
+          <div class="explorer-notice" id="explorer-notice" hidden></div>
+
+          <div class="explorer-list" id="explorer-list">
+            <div class="empty-state" id="explorer-empty">Select a service and click Inspect Tools.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast-stack" id="toast-stack" aria-live="polite"></div>
+</body>
+</html>

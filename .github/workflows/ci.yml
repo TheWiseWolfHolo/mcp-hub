@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows (Go + PowerShell)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Verify zero third-party Go dependencies
+        shell: pwsh
+        run: |
+          if (Select-String -Path go.mod -Pattern '^\s*require\b' -Quiet) {
+            throw 'go.mod must remain zero-dependency (Go standard library only).'
+          }
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go test (race)
+        run: go test -race -count=1 ./...
+
+      - name: Go build binaries
+        run: go build ./cmd/mcp-hub ./cmd/mcp-hub-ctl
+
+      - name: PowerShell 7 AST check (install-local.ps1)
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'install-local.ps1').Path,
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+
+      - name: Windows PowerShell 5.1 AST check (install-local.ps1)
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'install-local.ps1').Path,
+            [ref]$tokens,
+            [ref]$errors
+          )
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error $_.ToString() }
+            exit 1
+          }
+
+  linux:
+    name: Linux (Go)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Go test (race)
+        run: go test -race -count=1 ./...
+
+      - name: Go build
+        run: go build ./cmd/mcp-hub ./cmd/mcp-hub-ctl
