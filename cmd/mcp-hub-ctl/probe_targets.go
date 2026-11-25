@@ -166,27 +166,6 @@ func (p probeEndpoint) match(advertised string) (probeEndpoint, bool) {
 	return p, true
 }
 
-// inferServiceTokenFile mirrors Supervisor.Catalog()'s token file inference for direct HTTP services.
-func inferServiceTokenFile(svc hub.ServiceConfig) string {
-	for _, k := range sortedKeys(svc.Env) {
-		v := svc.Env[k]
-		ku := strings.ToUpper(k)
-		if (strings.HasSuffix(ku, "_TOKEN_FILE") || strings.HasSuffix(ku, "_TOKENS_FILE")) && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	if strings.TrimSpace(svc.ShutdownTokenFile) != "" {
-		return strings.TrimSpace(svc.ShutdownTokenFile)
-	}
-	for _, k := range sortedKeys(svc.EnvFiles) {
-		v := svc.EnvFiles[k]
-		if strings.Contains(strings.ToUpper(k), "TOKEN") && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
-		}
-	}
-	return ""
-}
-
 func configuredProbeEndpoints(cfg *hub.Config, name string) []probeEndpoint {
 	if cfg == nil {
 		return nil
@@ -237,7 +216,7 @@ func configuredProbeEndpoints(cfg *hub.Config, name string) []probeEndpoint {
 		if base := hub.InferServiceBaseURL(*svc); base != "" {
 			endpoints = append(endpoints, probeEndpoint{
 				url:       strings.TrimRight(base, "/") + svc.EffectiveClientPath(),
-				tokenFile: inferServiceTokenFile(*svc),
+				tokenFile: hub.InferServiceTokenFile(*svc),
 				kind:      "direct",
 			})
 		}

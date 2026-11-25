@@ -1623,7 +1623,7 @@ func (s *Supervisor) Catalog() CatalogResponse {
 				urls = addUniqueURL(urls, strings.TrimRight(base, "/")+scfg.EffectiveClientPath())
 			}
 			if auth.Type == "none" {
-				if tok := inferServiceTokenFile(scfg); tok != "" {
+				if tok := InferServiceTokenFile(scfg); tok != "" {
 					auth = CatalogAuthInfo{Type: "bearer", TokenFile: tok, Header: "Authorization"}
 				}
 			}
@@ -1728,20 +1728,49 @@ func firstTokenFile(primary string, tokens []RouteTokenConfig) string {
 	return ""
 }
 
-func inferServiceTokenFile(svc ServiceConfig) string {
-	for k, v := range svc.Env {
+func isStructuredTokenPolicyFile(envKey, path string) bool {
+	ku := strings.ToUpper(envKey)
+	if strings.HasSuffix(ku, "_TOKENS_FILE") || strings.HasSuffix(ku, "_TOKENS_FILES") {
+		return true
+	}
+	return strings.EqualFold(filepath.Ext(strings.TrimSpace(path)), ".json")
+}
+
+// InferServiceTokenFile resolves a direct HTTP service's client-usable single-line Bearer token file.
+// Multi-token JSON policy files (*_TOKENS_FILE / *.json) are skipped so Catalog(), mcp-hub-ctl
+// probe/tools/snippet, and the Web UI never attempt to send a structured policy file as a Bearer token.
+func InferServiceTokenFile(svc ServiceConfig) string {
+	if tok := strings.TrimSpace(svc.ShutdownTokenFile); tok != "" {
+		return tok
+	}
+	if tok := strings.TrimSpace(svc.ReloadTokenFile); tok != "" {
+		return tok
+	}
+	envKeys := make([]string, 0, len(svc.Env))
+	for k := range svc.Env {
+		envKeys = append(envKeys, k)
+	}
+	sort.Strings(envKeys)
+	for _, k := range envKeys {
+		v := strings.TrimSpace(svc.Env[k])
 		ku := strings.ToUpper(k)
-		if (strings.HasSuffix(ku, "_TOKEN_FILE") || strings.HasSuffix(ku, "_TOKENS_FILE")) && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
+		if v == "" || !strings.HasSuffix(ku, "_TOKEN_FILE") || isStructuredTokenPolicyFile(k, v) {
+			continue
 		}
+		return v
 	}
-	if strings.TrimSpace(svc.ShutdownTokenFile) != "" {
-		return strings.TrimSpace(svc.ShutdownTokenFile)
+	envFileKeys := make([]string, 0, len(svc.EnvFiles))
+	for k := range svc.EnvFiles {
+		envFileKeys = append(envFileKeys, k)
 	}
-	for k, v := range svc.EnvFiles {
-		if strings.Contains(strings.ToUpper(k), "TOKEN") && strings.TrimSpace(v) != "" {
-			return strings.TrimSpace(v)
+	sort.Strings(envFileKeys)
+	for _, k := range envFileKeys {
+		v := strings.TrimSpace(svc.EnvFiles[k])
+		ku := strings.ToUpper(k)
+		if v == "" || !strings.Contains(ku, "TOKEN") || isStructuredTokenPolicyFile(k, v) {
+			continue
 		}
+		return v
 	}
 	return ""
 }

@@ -3741,7 +3741,7 @@ func entryFromConfig(cfg *hub.Config, name string) (hub.CatalogEntry, bool) {
 		if base := hub.InferServiceBaseURL(*svc); base != "" {
 			e.ClientURLs = append(e.ClientURLs, strings.TrimRight(base, "/")+svc.EffectiveClientPath())
 		}
-		setAuth(inferServiceTokenFile(*svc))
+		setAuth(hub.InferServiceTokenFile(*svc))
 	}
 	if len(e.ClientURLs) > 0 {
 		e.ClientURL = e.ClientURLs[0]

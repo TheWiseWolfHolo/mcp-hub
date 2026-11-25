@@ -1809,3 +1809,67 @@ func TestAuditAllowsMultilineJSONTokensPolicyFileWhileCheckingACL(t *testing.T) 
 		t.Fatalf("missing policy file must still fail ACL audit: code=%d out=%s", code, out)
 	}
 }
+
+func TestSnippetAndProbeSkipStructuredTokensFile(t *testing.T) {
+	dataDir := t.TempDir()
+	cfgPath := filepath.Join(dataDir, "config.json")
+	code, out, stderr := runCLI(t, "--config", cfgPath, "init")
+	if code != exitOK {
+		t.Fatalf("init failed: code=%d out=%s err=%s", code, out, stderr)
+	}
+
+	policyPath := filepath.Join(dataDir, "secrets", "tokens.json")
+	policyJSON := "[\n  {\"hash\": \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \"profile\": \"full\"}\n]\n"
+	if err := hub.WritePrivateFileAtomic(policyPath, []byte(policyJSON)); err != nil {
+		t.Fatalf("write private policy file: %v", err)
+	}
+	clientTokenPath := filepath.Join(dataDir, "secrets", "search-toolkit-full.token")
+	if err := hub.WritePrivateFileAtomic(clientTokenPath, []byte("client-bearer-token-value-1234567890\n")); err != nil {
+		t.Fatalf("write private client token file: %v", err)
+	}
+
+	cfg, err := hub.LoadConfig(cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Services = []hub.ServiceConfig{{
+		Name:              "search-toolkit",
+		Command:           "node",
+		Port:              18473,
+		Env:               map[string]string{"SEARCH_TOOLKIT_HTTP_TOKENS_FILE": filepath.ToSlash(policyPath)},
+		ShutdownURL:       "http://127.0.0.1:18473/admin/shutdown",
+		ShutdownTokenFile: filepath.ToSlash(clientTokenPath),
+		ReloadURL:         "http://127.0.0.1:18473/admin/reload",
+		ReloadTokenFile:   filepath.ToSlash(clientTokenPath),
+	}}
+	raw, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := hub.WritePrivateFileAtomic(cfgPath, raw); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	endpoints := configuredProbeEndpoints(cfg, "search-toolkit")
+	if len(endpoints) != 1 {
+		t.Fatalf("expected 1 configured endpoint, got %+v", endpoints)
+	}
+	if !samePath(endpoints[0].tokenFile, clientTokenPath) {
+		t.Fatalf("configuredProbeEndpoints picked %q, want %q", endpoints[0].tokenFile, clientTokenPath)
+	}
+
+	// Offline snippet fallback (hub unreachable on ephemeral unused port) must also use ShutdownTokenFile, not tokens.json.
+	code, out, stderr = runCLI(t, "--config", cfgPath, "--addr", "127.0.0.1:1", "--timeout", "1s", "snippet", "search-toolkit", "--client", "claude", "--json")
+	if code != exitOK {
+		t.Fatalf("snippet failed: code=%d out=%s err=%s", code, out, stderr)
+	}
+	res := decodeJSON(t, out)
+	auth, _ := res["auth"].(map[string]any)
+	gotTokFile, _ := auth["tokenFile"].(string)
+	if !samePath(gotTokFile, clientTokenPath) {
+		t.Fatalf("snippet auth.tokenFile = %q, want %q (full output: %s)", gotTokFile, clientTokenPath, out)
+	}
+	if strings.Contains(out, "tokens.json") {
+		t.Fatalf("snippet must not reference tokens.json policy file: %s", out)
+	}
+}

@@ -1541,3 +1541,78 @@ func TestSupervisor_V03BulkControlsValidateTrayEventsAndClient(t *testing.T) {
 		t.Fatal("expected HubEvent on SubscribeEvents channel")
 	}
 }
+
+func TestInferServiceTokenFile(t *testing.T) {
+	t.Run("prefers shutdownTokenFile over structured TOKENS_FILE json", func(t *testing.T) {
+		svc := ServiceConfig{
+			Name: "search-toolkit",
+			Env: map[string]string{
+				"SEARCH_TOOLKIT_HTTP_TOKENS_FILE": "D:/ProgramData/SearchToolkit/tokens.json",
+			},
+			ShutdownTokenFile: "D:/ProgramData/McpHub/secrets/search-toolkit-full.token",
+			ReloadTokenFile:   "D:/ProgramData/McpHub/secrets/search-toolkit-reload.token",
+		}
+		if got := InferServiceTokenFile(svc); got != svc.ShutdownTokenFile {
+			t.Fatalf("InferServiceTokenFile() = %q, want %q", got, svc.ShutdownTokenFile)
+		}
+	})
+
+	t.Run("falls back to reloadTokenFile before env token files", func(t *testing.T) {
+		svc := ServiceConfig{
+			Name: "search-toolkit",
+			Env: map[string]string{
+				"SEARCH_TOOLKIT_HTTP_TOKENS_FILE": "D:/ProgramData/SearchToolkit/tokens.json",
+				"APP_TOKEN_FILE":                  "D:/ProgramData/McpHub/secrets/app.token",
+			},
+			ReloadTokenFile: "D:/ProgramData/McpHub/secrets/reload.token",
+		}
+		if got := InferServiceTokenFile(svc); got != svc.ReloadTokenFile {
+			t.Fatalf("InferServiceTokenFile() = %q, want %q", got, svc.ReloadTokenFile)
+		}
+	})
+
+	t.Run("skips structured _TOKENS_FILE and .json policy files", func(t *testing.T) {
+		svc := ServiceConfig{
+			Name: "policy-only",
+			Env: map[string]string{
+				"SEARCH_TOOLKIT_HTTP_TOKENS_FILE": "D:/ProgramData/SearchToolkit/tokens.json",
+				"CUSTOM_TOKEN_FILE":               "D:/ProgramData/SearchToolkit/policy.json",
+			},
+			EnvFiles: map[string]string{
+				"MULTI_TOKENS_FILE": "D:/ProgramData/SearchToolkit/more.json",
+			},
+		}
+		if got := InferServiceTokenFile(svc); got != "" {
+			t.Fatalf("expected empty token file when only structured policy files exist, got %q", got)
+		}
+	})
+
+	t.Run("deterministic sorted selection across multiple env and envFiles entries", func(t *testing.T) {
+		svc := ServiceConfig{
+			Name: "multi-env",
+			Env: map[string]string{
+				"Z_TOKEN_FILE": "D:/secrets/z.token",
+				"A_TOKEN_FILE": "D:/secrets/a.token",
+				"M_TOKENS_FILE": "D:/secrets/m.json",
+			},
+		}
+		for i := 0; i < 20; i++ {
+			if got := InferServiceTokenFile(svc); got != "D:/secrets/a.token" {
+				t.Fatalf("iteration %d: got %q, want D:/secrets/a.token", i, got)
+			}
+		}
+
+		svcEnvFiles := ServiceConfig{
+			Name: "envfiles-only",
+			EnvFiles: map[string]string{
+				"Z_AUTH_TOKEN": "D:/secrets/z-env.token",
+				"A_AUTH_TOKEN": "D:/secrets/a-env.token",
+			},
+		}
+		for i := 0; i < 20; i++ {
+			if got := InferServiceTokenFile(svcEnvFiles); got != "D:/secrets/a-env.token" {
+				t.Fatalf("iteration %d: got %q, want D:/secrets/a-env.token", i, got)
+			}
+		}
+	})
+}
